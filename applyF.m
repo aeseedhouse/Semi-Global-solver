@@ -18,17 +18,16 @@ function psi = applyF(M,H0,t,V,L,threshold)
 % gamma - LxL matrix where gamma_i,j is A_i,j in vMat basis 
 
     vM = V(:,end);
-    psi = zeros(length(vM),length(t));
-   
-    if any(H0)
+    timePowers = powers(t',M-1)';    % timePowers(ii,:) = t^(ii-1)
+    
+    if any(any(H0))
         [gamma,vKrylov,w] = arnoldi(H0,vM,L);
         eigs = eig(gamma);
         cap = capacity(mean(eigs),eigs);    % capacity of eigenvalue domain
         % calculate R_n(gamma)*w terms in newton approximation 
         % f(gamma,t) ~= sum(n=0 to M-1) a_n*R_n(gamma)*w
         Rnw = calcRn(w,gamma,eigs,L,cap); % newton basis polynomials       
-        timePowers = powers(t',M-1)';    % timePowers(ii,:) = t^(ii-1)
-        cNewt = divDiff(calcf(eigs,t,M,threshold).',eigs.'/cap).';
+        cNewt = divDiff(calcf(eigs,t,M,threshold).',eigs.'/cap,length(t),L).';
         f_vM = vKrylov*Rnw*cNewt;   % (eqn 189)
     else    % all zero hamiltonian
         f_vM = vM*t.^M;                
