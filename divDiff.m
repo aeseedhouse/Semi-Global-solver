@@ -1,4 +1,4 @@
-function cNewt = divDiff(fSample,xSample)
+function cNewt = divDiff(fSample,xSample,D,M)
 % Calculate expansion coefficients for newton interpolation of f(x) using
 % samples of f at points x. Expansion coefficients are given by divided differences defined as:
 % f[x1] = f(x1)
@@ -12,12 +12,13 @@ function cNewt = divDiff(fSample,xSample)
 % 
 % Inputs:
 % f - DxM matrix of sampled function values f(x) 
-% x - DxM matrix of sampling points
+% x - NxM matrix of sampling points
+% D - dimension of x
+% M - number of sampling points
 % 
 % Outputs:
 % cNewt - DxM expansion coefficients for newton interpolation
 
-    [D,M] = size(fSample);
     cNewt = zeros(D,M);
     diffs = fSample; % 0th order differences are sampled function values
     cNewt(:,1) = diffs(:,1);
@@ -25,4 +26,8 @@ function cNewt = divDiff(fSample,xSample)
         diffs = diff(diffs,1,2)./(xSample(:,d:M)-xSample(:,1:M-d+1)); % calculate (d-1)th order differences
         cNewt(:,d) = diffs(:,1);
     end
+    cNewt(isnan(cNewt)) = 0; 
+    % multiple samples from the same point ->
+    % xSample(:,d:M)-xSample(:,:,1:M-d+1) = 0
+    % causes line 26 to return column of NaN
 end
