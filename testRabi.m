@@ -6,7 +6,7 @@ psi0 = [1;0]; % initial state
 D = length(psi0);
 M = 10;  % number of points to sample in polynomial series approximation of s_ext
 L = M;    % number of points to sample in polynomial approximation f(G,t)
-fRabi = 1e6;    % rabi frequency
+fRabi = 1.2e6;    % rabi frequency
 threshold = 1e-6;   % threshold for convergence checks
 
 t = linspace(0,1,100)*1.5e-6;     % desired times to calculate psi(t)
@@ -26,6 +26,7 @@ for ii=1:length(t)
     pY(ii) = abs([1/sqrt(2),-1i/sqrt(2)]*psi(:,ii))^2;
 end
 
+figure()
 plot(t,pX)
 hold on
 plot(t,pY)
