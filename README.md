@@ -1,6 +1,6 @@
 # Semi-Global Solver
 
-This is a program for efficiently solving the time dependent Schr\"{o}dinger equation for a Hamiltonian that can also have time dependence. A polynomial series approximation is used to avoid computationally intensive matrix exponentiation. The time step over which the polynomial approximations are calculated are chosen adaptively; a time step that is too large leads to a diverging solution, whereas a small time step abolishes the advantages of using the semi-global approach.  
+This is a program for efficiently solving the time dependent Schrödinger equation for a Hamiltonian that can also have time dependence. A polynomial series approximation is used to avoid computationally intensive matrix exponentiation. The time step over which the polynomial approximations are calculated are chosen adaptively; a time step that is too large leads to a diverging solution, whereas a small time step abolishes the advantages of using the semi-global approach.  
 
 ## Getting Started
 
