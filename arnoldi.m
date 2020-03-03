@@ -18,7 +18,7 @@ function [gamma,vKrylov,w] = arnoldi(A,v,L)
     
     % w = v in krylov basis
     w = zeros(D,1);
-    w(1) = sqrt(v'*v); 
+    w(1) = norm(v);
     if any(v) % if v is zero vector, return gamma, vKrylov and w as all zeros
         vKrylov(:,1) = v/w(1); % first basis vector is normalised input vector
         
@@ -33,11 +33,11 @@ function [gamma,vKrylov,w] = arnoldi(A,v,L)
             end
             
             if jj < L   % don't save last vector and extra row of gamma
-                if abs(v_j1) < 1e-6    % dimension of krylov space larger than dimension of v - gram schmidt starts producing zero vectors
+                if abs(v_j1) < 1e-6    % dimension of krylov space larger than dimension of v - start producing zero vectors
                     gamma(jj+1,jj) = 0;
                     vKrylov(:,jj+1) = 0;
                 else
-                    gamma(jj+1,jj) = sqrt(v_j1'*v_j1);    % norm of v_j1
+                    gamma(jj+1,jj) = norm(v_j1);
                     vKrylov(:,jj+1) = v_j1/gamma(jj+1,jj);    % normalise v_j1
                 end
             end

@@ -1,4 +1,4 @@
-function psi = applyF(M,H0,t,V,L,threshold)
+function psi = applyF(M,Mfactorial,H0,t,V,L,threshold)
 % Calculate u = f_M(A,t)*v_M + sum(m=0 to M-1) v_m*t^m    (eqn 81)
 % 
 % f_M(H0,t) given by:
@@ -18,36 +18,34 @@ function psi = applyF(M,H0,t,V,L,threshold)
 % gamma - LxL matrix where gamma_i,j is A_i,j in vMat basis 
 
     vM = V(:,end);
-    timePowers = powers(t',M-1)';    % timePowers(ii,:) = t^(ii-1)
     
     if any(any(H0))
         [gamma,vKrylov,w] = arnoldi(H0,vM,L);
-        eigs = eig(gamma);
-        cap = capacity(mean(eigs),eigs);    % capacity of eigenvalue domain
+
+        eigs = eig(gamma);  
+        cap = capacity(ones(1,L)*eigs/L,eigs);  % capacity of eigenvalue domain
         % calculate R_n(gamma)*w terms in newton approximation 
         % f(gamma,t) ~= sum(n=0 to M-1) a_n*R_n(gamma)*w
         Rnw = calcRn(w,gamma,eigs,L,cap); % newton basis polynomials       
-        cNewt = divDiff(calcf(eigs,t,M,threshold).',eigs.'/cap,length(t),L).';
+        cNewt = divDiff(calcf(eigs,t,M,Mfactorial,threshold).',eigs.'/cap,L).';
         f_vM = vKrylov*Rnw*cNewt;   % (eqn 189)
     else    % all zero hamiltonian
         f_vM = vM*t.^M;                
     end  
-    psi = V(:,1:end-1)*timePowers + f_vM;
+    psi = V(:,1:end-1)*powers(t',M-1)' + f_vM;
 end
 
 function cap = capacity(xp,x)
 % calculate the capacity of the domain x defined by
 % capacity = product(n=0 to N-1) |xp-xn|^(1/N)
-    cap = 1;
+%     cap = 1;
     x = x(x~=xp); % remove any element of x equal to the test point xp;
     N = length(x);
-    for n=1:N
-        cap = cap*abs(x(n)-xp);
-    end
+    cap = prod(abs(x-xp));
     cap = cap^(1/N);
 end
 
-function f = calcf(z,t,M,threshold)
+function f = calcf(z,t,M,Mfactorial,threshold)
 % adapted from Tal Ezer's implementation (supp materials arXiv:1611.06707)
 % calculate f_M(z,t) (eqn. 82)
     f = ones(length(z),length(t));
@@ -55,27 +53,34 @@ function f = calcf(z,t,M,threshold)
         t=t';
     end
     zt = z*t;
-    direct = factorial(M)*eps./abs((z*t).^M) < threshold;
+    direct = Mfactorial*eps./abs((zt).^M) < threshold; 
     tail = ~direct;
-    f(direct) = exp(zt(direct));
+    ztDirect = zt(direct);
+    fDirect = exp(ztDirect); 
     
     % Preliminary calculation for values which can be found using direct
     % application of eqn. 82
     for m=1:M
-        f(direct) = m*(f(direct)-1)./zt(direct);
+        fDirect = m*(fDirect-1)./ztDirect; 
     end
     
     % Preliminary calculation of eqn. 89 for values which are too small to evaluate
     % using eqn. 82
+    fTail = f.*tail;
+    ztTail = zt.*tail;
+
     term = double(tail);
     j = 1;
-    while max(max(tail))
-        term(tail) = zt(tail).*term(tail)/(M+j);
-        f(tail) = f(tail) + term(tail);
-        j = j + 1;
-        tail(tail) = abs(term(tail))./abs(f(tail)) > threshold;
+    while any(any(term))
+        term = ztTail.*term/(M+j); 
+        fTail = fTail + term; 
+        j = j + 1; 
+        term = term.*(abs(term)./abs(fTail) > threshold);
     end
-    f = f.*((ones(size(z))*t).^M);
+    
+    f(direct) = fDirect;
+    f(tail) = fTail(tail);
+    f = f.*t.^M;
 end     
 
 function Rn = calcRn(w,gamma,eigSamples,L,cap)
@@ -85,9 +90,11 @@ function Rn = calcRn(w,gamma,eigSamples,L,cap)
 % Rn(z) = product(m=1 to n) (z-zm)
 % where zm's are sampling points (eigSamples)
 
-    Rn = zeros(L,L);
+    Rn = zeros(L);
     Rn(1, 1) = w(1);   % R0(gamma) = 1 => R0(gamma)*w = w;
+    Rn_1 = Rn(:,1);
     for n = 2:L
-        Rn(:,n) = (gamma*Rn(:,n-1) - eigSamples(n-1)*Rn(:,n-1))/cap;
+        Rn_1 = (gamma*Rn_1 - eigSamples(n-1)*Rn_1)/cap;
+        Rn(:,n) = Rn_1;
     end
 end

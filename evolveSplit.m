@@ -1,4 +1,4 @@
-function [psi,H0,V] = evolveSplit(t,tOffset,M,L,psi0,calcH,threshold,desiredStep,varargin)
+function [psi,H0,V] = evolveSplit(t,tOffset,M,L,psi0,calcH,threshold,varargin)
 % Same as evolveAdaptive but without jump detection or splitting time steps
 % detailed in arXiv:1611.06707
 %
@@ -21,13 +21,10 @@ function [psi,H0,V] = evolveSplit(t,tOffset,M,L,psi0,calcH,threshold,desiredStep
 % psi - Dxlength(t) matrix where psi(:,m) = psi(t(m))
 
     D = length(psi0);
-    
+    Mfactorial = factorial(M);
     % timing
-    if ~isempty(desiredStep)
-        tStep = 2*desiredStep;
-    else
-        tStep = t(end)/1e2;
-    end
+    desiredStep = [];
+    tStep = t(end);
     x = -cos(pi*(0:M-1)/(M-1)); % chebyshev sampling points in domain [-1,1]
     tCheby = (x*tStep+tStep)/2; % sampling points within time interval
     tCalc = [tCheby tCheby(2:end)+tStep];
@@ -47,6 +44,8 @@ function [psi,H0,V] = evolveSplit(t,tOffset,M,L,psi0,calcH,threshold,desiredStep
     elapsedTime = 0;
     Q = calcqNewt(tCheby,tCheby(end)-tCheby(1));  % newton interpolation conversion factors used in calcV (eqns 220,226-228)
     
+    psi(:,t==0) = psi0.*ones(D,sum(t==0)); 
+    
     while elapsedTime < t(end)        
         if changetStep 
             tStep = newStep;
@@ -54,7 +53,7 @@ function [psi,H0,V] = evolveSplit(t,tOffset,M,L,psi0,calcH,threshold,desiredStep
             tCalc = [tCheby tCheby(2:end)+tStep];
             % recalculate psiGuess for new sampling times
             if elapsedTime > 0
-                psiGuess(:,2:end) = applyF(M,H0,tCheby(2:end),V,min(D,L),threshold);
+                psiGuess(:,2:end) = applyF(M,Mfactorial,H0,tCheby(2:end),V,min(D,L),threshold);
                 psiGuess = psiGuess./vecnorm(psiGuess);
             else
                 psiGuess = psi0*ones(1,M);
@@ -84,9 +83,8 @@ function [psi,H0,V] = evolveSplit(t,tOffset,M,L,psi0,calcH,threshold,desiredStep
         while notConverged
             currCount = currCount + 1;
             [V,H0] = calcV(tCheby,psiGuess,H,Q);
-            psiNew = applyF(M,H0,tCalc,V,min(D,L),threshold);
+            psiNew = applyF(M,Mfactorial,H0,tCalc,V,min(D,L),threshold);
             notConverged = norm(psiNew(:,M)-psiGuess(:,end))/norm(psiGuess(:,end)) > threshold;
-%             notConverged = any(vecnorm(psiNew(:,1:M)-psiGuess)) > threshold;
             psiGuess = psiNew(:,1:M);
             if currCount > countMax
                 break;
@@ -114,7 +112,7 @@ function [psi,H0,V] = evolveSplit(t,tOffset,M,L,psi0,calcH,threshold,desiredStep
                 
                 % find index of last desired time stamp
                 last = findtInd(first,elapsedTime,tStep,t);
-                psi(:,first:last) = applyF(M,H0,t(first:last)-elapsedTime,V,min(D,L),threshold);    % calculate psi at desired times            
+                psi(:,first:last) = applyF(M,Mfactorial,H0,t(first:last)-elapsedTime,V,min(D,L),threshold);    % calculate psi at desired times            
                 psi(:,first:last) = psi(:,first:last)./vecnorm(psi(:,first:last));  % normalise psi
                 
                 first = last + 1;

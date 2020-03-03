@@ -2,7 +2,7 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
 % Implements the method for solving the time dependent schrodinger equation
 % detailed in arXiv:1611.06707
 %
-% psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredStep,varargin)
+% psi = evolve(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredStep,varargin)
 % 
 % Inputs:
 % t - times at which to calculate psi(t)
@@ -10,7 +10,8 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
 % L - number of terms to used in applyF for polynomial approximation of f_M(H0,t) when
 % calculating solution for psi(t)
 % psi0 - Dx1 vector containing initial state
-% calcH - handle to a function which calculates the hamiltonian at requested sampling times
+% calcH - handle to a function which calculates the hamiltonian at requested
+% sampling times
 % threshold - threshold for convergence checks
 % jumpThreshold - threshold for maximum jump in Hamiltonian (leave empty if jump detection not needed)
 % desiredStep - desired time step (leave empty if no desired step) 
@@ -26,10 +27,10 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
     end
     
     D = length(psi0);
-    
+    Mfactorial = factorial(M);
     % timing
     if ~isempty(desiredStep)
-        tStep = 2*desiredStep;
+        tStep = min(2*desiredStep,t(end)/10);
     else
         tStep = t(end)/10;
     end
@@ -41,7 +42,7 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
     psiGuess = psi0*ones(1,M);    % guess for psi(t) in the first time step is the initial state
     
     % flags and indicators
-    first = 1;  % index of first desired time stamp in current approximation interval     
+    first = 1;  % index into t of first desired time in current approximation interval  
     countMax = 20; % maximum number of iterations allowed when checking for convergence of solution    
     lastStep = 0; % last time step reached
     firstStep = 1; % first time step
@@ -55,15 +56,13 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
     elapsedTime = 0;
     Q = calcqNewt(tCheby,tCheby(end)-tCheby(1));  % newton interpolation conversion factors used in calcV (eqns 220,226-228)
     
-    while elapsedTime < t(end)        
+    while elapsedTime < t(end)
         if changetStep 
             tStep = newStep;
             tCheby = (x*tStep+tStep)/2; tCalc = [tCheby tCheby(2:end)+tStep]; % recalculate sampling times     
             
             % recalculate psiGuess for new sampling times
             if ~firstStep
-%                 psiGuess(:,2:end) = applyF(M,H0,tCheby(2:end),V,min(D,L),threshold);
-%                 psiGuess = psiGuess./vecnorm(psiGuess); 
                 psiGuess = psiGuess(:,1)*ones(1,M);
             else
                 psiGuess = psi0*ones(1,M); % if still in first time step, use psi0 as the guess
@@ -72,13 +71,12 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
             
             % reset flags
             changetStep = 0; 
-%             split = 0; prevSplit = 0;
         end
         
         if elapsedTime + tStep > t(end) 
             % last time step has been reached
+%             tStep
             lastStep = 1;
-            tStep
             tStep = t(end)-elapsedTime;
             tCheby = (x*tStep+tStep)/2;     % recalculate sampling times
         end
@@ -88,7 +86,8 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
         H = calcH(tSample,varargin{:}); % sample Hamiltonian for use in calcV
         H = -1i*H;  % H/(i*hbar) with hbar = 1;
         
-        if abs(max(max(max(diff(H,1,3),[],3)))) > jumpThreshold && ~firstStep && ~prevSplit
+        jumps = any(any(abs(diff(H,1,3)) > jumpThreshold,1),2);
+        if any(jumps) && ~firstStep && ~prevSplit
             split = 1; % if maximum jump in hamiltonian exceeds threshold, split current time step
         else
             % calculate vj's
@@ -97,7 +96,7 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
             while notConverged
                 currCount = currCount + 1;
                 [V,H0] = calcV(tCheby,psiGuess,H,Q);
-                psiNew = applyF(M,H0,tCalc,V,min(D,L),threshold);
+                psiNew = applyF(M,Mfactorial,H0,tCalc,V,min(D,L),threshold);
                 notConverged = norm(psiNew(:,M)-psiGuess(:,end))/norm(psiGuess(:,end)) > threshold;
                 psiGuess = psiNew(:,1:M);
                 if currCount > countMax
@@ -108,47 +107,58 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
         
         if mean(abs(vecnorm(psiGuess)-1)) > threshold || split % divergence indicated by norm of psi increasing beyond 1+threshold
             change = 1;
-            if (~firstStep || split)  && ~prevSplit 
+            if split
                 % non convergence may be due to large jump in hamiltonian,
                 % try splitting up current time step
-                jumpInd = findJump(H); % find when biggest jump in hamiltonian occurs
-                % locate jump on finer grid                
-                tStart = tSample(jumpInd); tEnd = tSample(jumpInd + 1);
-                for ii=1:3
-                    tFine = linspace(tStart,tEnd,100);
-                    jumpInd = findJump(calcH(tFine,varargin{:}));
-                    tStart = tFine(jumpInd); tEnd = tFine(jumpInd+1);
-                end
+                jumpInd = 1:(M-1); 
+                jumpInd = jumpInd(squeeze(jumps)); % index of sampling times where jumps in hamiltonian occur
                 
-                if jumpInd > 1 % if jumpInd = 1, there probably wasn't a jump - don't split the interval, reduce time step 
+                for j=1:length(jumpInd)
+
+                    % locate jump on finer time grid
+                    jInd = jumpInd(j);
+                    tStart = tSample(jInd); 
+                    if j==length(jumpInd)
+                        tEnd = tSample(end);
+                    else
+                        tEnd = tSample(jInd + 1);
+                    end
+                    tFineStart = tStart; tFineEnd = tEnd;
+                    for ii=1:10
+                        tFine = linspace(tFineStart,tFineEnd,10);
+                        jIndFine = findJump(calcH(tFine,varargin{:}));
+                        tFineStart = tFine(jIndFine); tFineEnd = tFine(jIndFine+1);
+                    end
+                    
                     % first split interval goes from elapsedTime up to the
                     % time of the jump
-                    if t(first) <= tFine(jumpInd) % if there is a desired time stamp in the first split interval
-                        last = findtInd(first,elapsedTime,tFine(jumpInd)-elapsedTime,t);
-                        tSplit = [t(first:last),tFine(jumpInd)];
-                        psiSplit = evolveSplit(tSplit-elapsedTime,elapsedTime,M,L,psiGuess(:,1),calcH,threshold,(tFine(jumpInd)-elapsedTime)/4,varargin{:});
+                    if t(first) <= tFine(jIndFine) % if there is a desired time stamp in the first split interval
+                        last = findtInd(first,elapsedTime,tFine(jIndFine)-elapsedTime,t);
+                        tSplit = [t(first:last),tFine(jIndFine)];
+                        psiSplit = evolveSplit(tSplit-elapsedTime,elapsedTime,M,L,psiGuess(:,1),calcH,threshold,varargin{:});
                         psi(:,first:last) = psiSplit(:,1:end-1);
                         first = last + 1;
                     else
-                        psiSplit = evolveSplit(tFine(jumpInd)-elapsedTime,elapsedTime,M,L,psiGuess(:,1),calcH,threshold,(tFine(jumpInd)-elapsedTime)/4,varargin{:});
-                    end                    
+                        psiSplit = evolveSplit(tFine(jIndFine)-elapsedTime,elapsedTime,M,L,psiGuess(:,1),calcH,threshold,varargin{:});
+                    end
                     
                     % second split interval goes from just after time of jump to
                     % end of time step
-                    if t(first) <= elapsedTime + tStep % if any desired time stamps are within the second split interval
-                        last = findtInd(first,tFine(jumpInd),elapsedTime+tStep-tFine(jumpInd),t);                        
-                        tSplit = [t(first:last),elapsedTime+tStep];
-                        psiSplit = evolveSplit(tSplit-tFine(jumpInd+1),tFine(jumpInd+1),M,L,psiSplit(:,end),calcH,threshold,(elapsedTime+tStep-tFine(jumpInd+1))/4,varargin{:});
+                    if t(first) <= tEnd % if any desired time stamps are within the second split interval
+                        last = findtInd(first,tFine(jIndFine),tEnd-tFine(jIndFine),t);
+                        tSplit = [t(first:last),tEnd];
+                        psiSplit = evolveSplit(tSplit-tFine(jIndFine+1),tFine(jIndFine+1),M,L,psiSplit(:,end),calcH,threshold,varargin{:});
                         psi(:,first:last) = psiSplit(:,1:end-1);
                         first = last + 1;
                     else
-                        psiSplit = evolveSplit(elapsedTime+tStep-tFine(jumpInd+1),tFine(jumpInd+1),M,L,psiSplit(:,end),calcH,threshold,(elapsedTime+tStep-tFine(jumpInd+1))/4,varargin{:});
+                        psiSplit = evolveSplit(tEnd-tFine(jIndFine+1),tFine(jIndFine+1),M,L,psiSplit(:,end),calcH,threshold,varargin{:});
                     end
-                    
-                    elapsedTime = elapsedTime + tStep;
+
+                    elapsedTime = tEnd;
                     psiGuess = psiSplit(:,end)*ones(1,M); % use psi(elapsedTime) as initial guess of psi(t) for next time step
-                    prevSplit = 1; split = 0; change = 0; % set/reset flags
                 end
+                    
+                    prevSplit = 1; split = 0; change = 0; % set/reset flags
             end
             
             if change % reduce time step if the time step could not be split
@@ -169,10 +179,10 @@ function psi = evolveAdaptive(t,M,L,psi0,calcH,threshold,jumpThreshold,desiredSt
                 newStep = desiredStep/ceil(desiredStep/tStep);
             end            
         else % once converged, calculate solution for desired time stamps                        
-            if t(first) <= elapsedTime+tStep  % if any desired time stamps are within current approximation interval                
+            if t(first) <= elapsedTime+tStep % if any desired time stamps are within current approximation interval                
                 % find index of last desired time stamp
                 last = findtInd(first,elapsedTime,tStep,t);
-                psi(:,first:last) = applyF(M,H0,t(first:last)-elapsedTime,V,min(D,L),threshold);    % calculate psi at desired times            
+                psi(:,first:last) = applyF(M,Mfactorial,H0,t(first:last)-elapsedTime,V,min(D,L),threshold);    % calculate psi at desired times            
                 psi(:,first:last) = psi(:,first:last)./vecnorm(psi(:,first:last));  % normalise psi
                 first = last + 1;
             end
@@ -203,13 +213,17 @@ end
 
 function last = findtInd(first,elapsedTime,tStep,t)
 % find index of last desired time to calculate psi(t) within current time step
-    last = first + 1;
-    if elapsedTime + tStep == t(end)
-        last = length(t);
-    else
-        while t(last) <= elapsedTime + tStep
-            last = last + 1;
+    if first < length(t)
+        last = first;
+        if elapsedTime + tStep == t(end) % if this is the last time step
+            last = length(t);
+        else
+            while (t(last) <= elapsedTime + tStep) && (last <= length(t))
+                last = last + 1;
+            end
+            last = last - 1; % subtract one due to overshoot in while loop
         end
-        last = last - 1;
+    else % if first = length(t)
+        last = length(t);
     end
 end
